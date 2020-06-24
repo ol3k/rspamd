@@ -171,15 +171,16 @@ local function oletools_check(task, content, digest, rule)
 
           -- M=Macros, A=Auto-executable, S=Suspicious keywords, I=IOCs,
           -- H=Hex strings, B=Base64 strings, D=Dridex strings, V=VBA strings
-	  local analysis_cat_table = {
-            [1] = '-',
-            [2] = '-',
-            [3] = '-',
-            [4] = '-',
-            [5] = '-',
-            [6] = '-',
-            [7] = '-',
-            [8] = '-'
+          -- Keep sorted to avoid dragons
+          local analysis_cat_table = {
+            autoexec = '-',
+            base64 = '-',
+            dridex = '-',
+            hex = '-',
+            iocs = '-',
+            macro_exist = '-',
+            suspicious = '-',
+            vba = '-'
           }
           local analysis_keyword_table = {}
 
@@ -247,7 +248,7 @@ local function oletools_check(task, content, digest, rule)
 
               elseif #v.macros > 0 then
 
-                analysis_cat_table[1] = 'M'
+                analysis_cat_table.macro_exist = 'M'
 
                 lua_util.debugm(rule.name, task,
                     '%s: filename: %s', rule.log_prefix, result[2]['file'])
@@ -263,25 +264,25 @@ local function oletools_check(task, content, digest, rule)
                   lua_util.debugm(rule.name, task, '%s: threat found - type: %s, keyword: %s, '..
                       'description: %s', rule.log_prefix, a.type, a.keyword, a.description)
                   if a.type == 'AutoExec' then
-                    analysis_cat_table[2] = 'A'
+                    analysis_cat_table.autoexec = 'A'
                     table.insert(analysis_keyword_table, a.keyword)
                   elseif a.type == 'Suspicious' then
                     if rule.extended == true or
                       (a.keyword ~= 'Base64 Strings' and a.keyword ~= 'Hex Strings')
                     then
-                      analysis_cat_table[3] = 'S'
+                      analysis_cat_table.suspicious = 'S'
                       table.insert(analysis_keyword_table, a.keyword)
                     end
                   elseif a.type == 'IOC' then
-                    analysis_cat_table[4] = 'I'
+                    analysis_cat_table.iocs = 'I'
                   elseif a.type == 'Hex strings' then
-                    analysis_cat_table[5] = 'H'
+                    analysis_cat_table.hex = 'H'
                   elseif a.type == 'Base64 strings' then
-                    analysis_cat_table[6] = 'B'
+                    analysis_cat_table.base64 = 'B'
                   elseif a.type == 'Dridex strings' then
-                    analysis_cat_table[7] = 'D'
+                    analysis_cat_table.dridex = 'D'
                   elseif a.type == 'VBA strings' then
-                    analysis_cat_table[8] = 'V'
+                    analysis_cat_table.vba = 'V'
                   end
                 end
               end
@@ -291,7 +292,7 @@ local function oletools_check(task, content, digest, rule)
           lua_util.debugm(N, task, '%s: analysis_keyword_table: %s', rule.log_prefix, analysis_keyword_table)
           lua_util.debugm(N, task, '%s: analysis_cat_table: %s', rule.log_prefix, analysis_cat_table)
 
-          if rule.extended == false and analysis_cat_table[2] == 'A' and analysis_cat_table[3] == 'S' then
+          if rule.extended == false and analysis_cat_table.autoexec == 'A' and analysis_cat_table.suspicious == 'S' then
             -- use single string as virus name
             local threat = 'AutoExec + Suspicious (' .. table.concat(analysis_keyword_table, ',') .. ')'
             lua_util.debugm(rule.name, task, '%s: threat result: %s', rule.log_prefix, threat)
@@ -301,7 +302,19 @@ local function oletools_check(task, content, digest, rule)
           elseif rule.extended == true and #analysis_keyword_table > 0 then
             -- report any flags (types) and any most keywords as individual virus name
 
-            table.insert(analysis_keyword_table, 1, table.concat(analysis_cat_table))
+  	    local analysis_cat_table_values_sorted = {}
+	    local analysis_cat_table_keys_sorted = lua_util.keys(analysis_cat_table)
+
+	    table.sort(analysis_cat_table_keys_sorted)
+
+            for k, v in pairs(analysis_cat_table_keys_sorted) do
+	      table.insert(analysis_cat_table_values_sorted,analysis_cat_table[v])
+	    end
+
+            table.insert(analysis_keyword_table, 1, table.concat(analysis_cat_table_values_sorted))
+
+	    lua_util.debugm(rule.name, task, '%s: analysis_cat_table: %s',
+                rule.log_prefix, table.concat(lua_util.values(analysis_cat_table), ','))
 
             lua_util.debugm(rule.name, task, '%s: extended threat result: %s',
                 rule.log_prefix, table.concat(analysis_keyword_table, ','))
@@ -309,7 +322,7 @@ local function oletools_check(task, content, digest, rule)
             common.yield_result(task, rule, analysis_keyword_table, rule.default_score)
             common.save_cache(task, digest, rule, analysis_keyword_table, rule.default_score)
 
-          elseif analysis_cat_table[1] == '-' and #analysis_keyword_table == 0 then
+          elseif analysis_cat_table.macro_exist == '-' and #analysis_keyword_table == 0 then
             common.save_cache(task, digest, rule, 'OK')
             common.log_clean(task, rule, 'No macro found')
 
